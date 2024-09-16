@@ -22,67 +22,126 @@ import matplotlib.colors as colors
 from netCDF4 import Dataset
 from matplotlib import cm
 
+import cartopy.crs as ccrs
+from cartopy import feature
+from cartopy.io.shapereader import Reader
+
+from cartopy.mpl.gridliner import LONGITUDE_FORMATTER, LATITUDE_FORMATTER
+import matplotlib.ticker as mticker
+
+proj=ccrs.Mercator()
+states= feature.ShapelyFeature(
+        Reader('shp/ne_10m_admin_1_states_provinces_lines.shp' ).geometries(),
+        ccrs.PlateCarree(),
+        )
+borders= feature.ShapelyFeature(
+        Reader('shp/ne_50m_admin_0_boundary_lines_land.shp' ).geometries(),
+        ccrs.PlateCarree(),
+        )
+
+land= feature.ShapelyFeature(
+        Reader('shp/ne_50m_land.shp' ).geometries(),
+        ccrs.PlateCarree(),
+        )
+
 # Funcion que realiza una grafica de una variable escalar
 def graficar_temparatura(i, tmp2m, levels, cmap1, long_o, long_e, lat_s, lat_n, Fechas):
-        fig=plt.figure()
+        dpi=100
+        w=986/dpi
+        h=785/dpi
+        fig=plt.figure(figsize=(w,h),dpi=dpi)
+        fig.subplots_adjust(left=0.01,right=0.99,top=0.94,bottom=0.03)
+        ax=plt.subplot(1,1,1,
+            #projection=proj,
+            projection=ccrs.PlateCarree(),
+            )
+        ax.add_feature(
+                borders,
+                edgecolor='black',
+                facecolor='none',
+                lw=0.5,
 
-        # Convertir la temperatura a grados Celcius
-        aux=tmp2m-273.15
+                )
+        ax.add_feature(
+                states,
+                edgecolor='black',
+                facecolor='none',
+                lw=0.5,
 
+                )
+        ax.add_feature(
+                land,
+                edgecolor='black',
+                facecolor='none',
+                lw=0.5,
+
+                )
         # Formato de las etiquetas de los ejes (ticks)
-        plt.rc('font', weight='bold', size=8)
+        #plt.rc('font', weight='bold', size=8)
 
         # Hora de salida
         fecha=Fechas.astype('|S1').tostring().decode('utf-8')
 
-        # data es el atributo que tiene los datos dentro del formato netcdf
-        plt.contourf(long,lat,aux.data,levels,cmap=cm.get_cmap(cmap1))
-        plt.plot(data[:,0],data[:,1],'k',linewidth=0.5)
-        plt.title('Temperatura en superficie [°C] \n ' + str(fecha) +'UTC', fontdict=font)
-        plt.xlabel('Longitud', fontdict=font)
-        plt.ylabel('Latitud', fontdict=font)
-        #plt.colorbar(ticks=np.arange(-10,50,5), fraction=0.046, pad=0.04)
-        plt.colorbar(ticks=np.arange(-10,50,5), orientation="horizontal", pad=0.15, fraction=0.056)
-        plt.axis('scaled')
+        ax_leg=ax.gridlines(
+                draw_labels=True,
+                linestyle='--',
+                )
+        ax_leg.xlabels_top=False
+        ax_leg.ylabels_right=False
+        #ax_leg.xlocator=mticker.FixedLocator(range(int(lon_min),int(lon_max)+1,1))
+        ax_leg.xformatter=LONGITUDE_FORMATTER
+        #ax_leg.ylocator=mticker.FixedLocator(range(int(lat_min),int(lat_max)+2,1))
+        ax_leg.yformatter=LATITUDE_FORMATTER
+        ax_leg.ypadding=-27
+        ax_leg.xpadding=-11
 
+        plt.contourf(lon,lat,tmp2m,levels,cmap=cm.get_cmap(cmap1))
+        title='Modelo WRF ' + str(fecha) +' UTC'+50*' '+'Pronóstico a '+str(i)+' horas\n'
+        title+='Temperatura en superficie [°C] '+50*' '+'Hora Local:'
+        plt.title(title, fontdict=font)
+        cbar=plt.colorbar(
+                ticks=np.arange(-10,50,10),
+                orientation="horizontal",
+                aspect=70,
+                #pad=0.15,
+                pad=0.04,
+                #fraction=0.056,
+                fraction=0.02,
+                )
+        #plt.axis('scaled')
+
+        cbar.ax.set_xlabel('Temperatura[C]',
+                labelpad=-40,
+                )
         # Coordenadas del dominio
-        plt.axis([float(long_o), float(long_e), float(lat_s), float(lat_n)])
+        plt.axis([float(long_o), float(long_e), float(lat_s), float(lat_n)], crs=ccrs.PlateCarree())
 
         # Crear y guardar la figura
         nombre='Temperatura_2m_' + str(i) +'.png'
-        plt.savefig(nombre,bbox_inches="tight", dpi=200)
-
-        #Que no muestre la ventana por cada imagen
-        plt.show(block=False)
+        plt.savefig(nombre, dpi=dpi)
         plt.close(fig)
 
 
-# Cargar la divisi'on pol'itica de M'exico
-data=np.loadtxt('/home/comun/scripts/python/division_mexico.dat')
-
 # Formato del texto de la gr'afica
-font={'family': 'sans-serif','color': 'black','weight': 'bold','size': 10,}
+font={'family': 'sans-serif','color': 'black','weight': 'normal','size': 10,}
 
 # Cargar el archivo NetCDF
 dataset=Dataset(sys.argv[1])
 
 # Cargar individualmente las variables de latitud, longitud, temparatura y tiempo
-lat=dataset.variables['XLAT']
-long=dataset.variables['XLONG']
-T2=dataset.variables['T2']
+lat=np.array(dataset.variables['XLAT'][0,:,0])
+lon=np.array(dataset.variables['XLONG'][0,0,:])
+T2=np.array(dataset.variables['T2'][:])
+T2-=273.15
 Tiempo=len(dataset.variables['Times'])
 Fechas=dataset.variables['Times']
 
-# Guardar 'unicamente la latitud y la longitud
-lat=lat[1,:,1]
-long=long[1,1,:]
-
 # Valores por defecto, tomados del NetCDF de entrada
-lat_n=lat[len(lat)-1]		# Latitud norte
+lat_n=lat[-1]		# Latitud norte
 lat_s=lat[0]			# Latitud sur
-long_e=long[len(long)-1]	# Longitud este
-long_o=long[0]			# Longitud oeste
-file="/home/comun/scripts/python/barra_temperatura.txt"
+long_e=lon[-1]	# Longitud este
+long_o=lon[0]			# Longitud oeste
+file="./barra_temperatura.txt"
 rango_i=-14
 rango_s=51
 numproc=1
